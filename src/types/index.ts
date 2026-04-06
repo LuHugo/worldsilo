@@ -1,5 +1,17 @@
 export type Spectrum4 = [number, number, number, number];
 
+export type SpeciesCategory = 'leafy' | 'fruiting' | 'herb' | 'root' | 'legume' | 'fungi';
+
+export const SPECIES_CATEGORIES: { key: SpeciesCategory | 'all'; label: string }[] = [
+  { key: 'all', label: 'ALL' },
+  { key: 'leafy', label: 'LEAFY' },
+  { key: 'herb', label: 'HERB' },
+  { key: 'fruiting', label: 'FRUITING' },
+  { key: 'root', label: 'ROOT' },
+  { key: 'legume', label: 'LEGUME' },
+  { key: 'fungi', label: 'FUNGI' },
+];
+
 export interface Species {
   id: string;
   name: string;
@@ -9,6 +21,10 @@ export interface Species {
   base_growth_rate: number;
   description: string;
   icon: string;
+  category?: SpeciesCategory;
+  is_system?: boolean;
+  user_id?: string;
+  note?: string;
 }
 
 export interface SiloInstance {
@@ -45,9 +61,25 @@ export interface CompoundIngredient {
   provides: string;
 }
 
+export interface User {
+  id: string;
+  username: string;
+  is_admin: boolean;
+  created_at: number;
+}
+
+export interface UserFormulaSpecies {
+  id: string;
+  formula_id: string;
+  species_id: string;
+  compatibility: number;
+  from_user: boolean;
+}
+
 export interface CompatibleSpecies {
   species_id: string;
   compatibility: number;
+  from_user: boolean;
   manual_override?: boolean;
 }
 
@@ -63,6 +95,9 @@ export interface NutrientFormula {
   macronutrients: CompoundIngredient[];
   micronutrients: CompoundIngredient[];
   description: string;
+  is_system?: boolean;
+  user_id?: string;
+  note?: string;
   compatible_species: CompatibleSpecies[];
 }
 

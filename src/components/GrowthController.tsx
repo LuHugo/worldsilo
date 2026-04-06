@@ -1,17 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useSiloStore } from '../store/useSiloStore';
 import { calculateHealthFromInstance, getIdealBiomassCurve, simulateDay } from '../engine/growth';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Zap, Droplets, ThermometerSun, ArrowRight, Play } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from './ui/chart';
+import { Zap, Droplets, Sun } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Button } from './ui/button';
+import { Slider } from './ui/slider';
+import { Progress } from './ui/progress';
+import { Badge } from './ui/badge';
+import { Separator } from './ui/separator';
+import type { Spectrum4 } from '../types';
 
 interface GrowthControllerProps {
   instance: any;
 }
 
+const CHANNEL_LABELS = [
+  { key: 'B', label: 'Blue (400-520nm)', color: 'text-blue-500', barColor: 'rgba(59, 130, 246, 0.8)' },
+  { key: 'G', label: 'Green (520-610nm)', color: 'text-green-500', barColor: 'rgba(34, 197, 94, 0.8)' },
+  { key: 'R', label: 'Red (610-720nm)', color: 'text-red-500', barColor: 'rgba(239, 68, 68, 0.8)' },
+  { key: 'FR', label: 'Far-Red (720-1000nm)', color: 'text-rose-400', barColor: 'rgba(251, 113, 133, 0.8)' },
+];
+
 export function GrowthController({ instance }: GrowthControllerProps) {
   const { species, logs, advanceDay, updateInstanceSettings, refreshLogs } = useSiloStore();
   const [localEC, setLocalEC] = useState(instance.applied_ec);
-  const [localRGB, setLocalRGB] = useState<[number, number, number]>(instance.applied_rgb as [number, number, number]);
+  const [localSpectrum, setLocalSpectrum] = useState<Spectrum4>(instance.applied_spectrum as Spectrum4);
 
   const sp = species.find((s) => s.id === instance.species_id);
 
@@ -21,22 +36,24 @@ export function GrowthController({ instance }: GrowthControllerProps) {
 
   useEffect(() => {
     setLocalEC(instance.applied_ec);
-    setLocalRGB(instance.applied_rgb as [number, number, number]);
-  }, [instance.applied_ec, instance.applied_rgb]);
+    setLocalSpectrum(instance.applied_spectrum as Spectrum4);
+  }, [instance.applied_ec, instance.applied_spectrum]);
 
   if (!sp) return null;
 
   const health = calculateHealthFromInstance(
-    localRGB,
-    sp.ideal_spectrum_rgb,
+    localSpectrum,
+    sp.ideal_spectrum,
     localEC,
     sp.ideal_ec,
   );
 
-  const spectrumBg = `rgba(${localRGB[0]}, ${localRGB[1]}, ${localRGB[2]}, 0.08)`;
+  const [r, g, b, fr] = localSpectrum;
+  const spectrumBg = `rgba(${r}, ${g}, ${b}, 0.1)`;
+  const brightness = Math.round(((r + g + b + fr) / (255 * 4)) * 100);
 
   const handleApplySettings = async () => {
-    await updateInstanceSettings(instance.id, localEC, localRGB);
+    await updateInstanceSettings(instance.id, localEC, localSpectrum);
   };
 
   const handleAdvanceDay = async () => {
@@ -53,6 +70,22 @@ export function GrowthController({ instance }: GrowthControllerProps) {
   const remainingDays = Math.max(0, sp.total_days - instance.current_day);
   const progress = Math.min(100, (instance.current_day / sp.total_days) * 100);
 
+  const { spectrumMatch, brightnessFactor: _, nutrientEff, rFrRatio: rfr } = simulateDay(
+    sp.base_growth_rate,
+    localSpectrum,
+    sp.ideal_spectrum,
+    localEC,
+    sp.ideal_ec,
+  );
+
+  const idealRFR = (sp.ideal_spectrum[3] || 1) > 0 ? sp.ideal_spectrum[0] / sp.ideal_spectrum[3] : sp.ideal_spectrum[0];
+
+  const updateChannel = (index: number, value: number) => {
+    const next = [...localSpectrum] as Spectrum4;
+    next[index] = value;
+    setLocalSpectrum(next);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -64,192 +97,201 @@ export function GrowthController({ instance }: GrowthControllerProps) {
             <p className="text-sm text-muted-foreground">{sp.name} — Day {instance.current_day}/{sp.total_days}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-xs font-mono text-muted-foreground">HEALTH</p>
-            <p className={`text-2xl font-mono font-bold ${health >= 80 ? 'text-primary' : health >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-              {health}%
-            </p>
-          </div>
-        </div>
+        <Badge variant={health >= 80 ? 'default' : health >= 50 ? 'secondary' : 'destructive'} className="font-mono px-4 py-1.5">
+          HEALTH: {health}%
+        </Badge>
       </div>
 
       {/* Progress */}
-      <div className="bg-card border border-border rounded-lg p-4">
-        <div className="flex items-center justify-between text-xs font-mono mb-2">
-          <span className="text-muted-foreground">PROGRESS</span>
-          <span className="text-foreground">{remainingDays} DAYS REMAINING</span>
-        </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-between text-xs font-mono mb-2">
+            <span className="text-muted-foreground">PROGRESS</span>
+            <span className="text-foreground">{remainingDays} DAYS REMAINING</span>
+          </div>
+          <Progress value={progress} className="h-2" />
+        </CardContent>
+      </Card>
 
       {/* Digital Twin Preview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-card border border-border rounded-lg p-4 text-center">
-          <ThermometerSun className="w-5 h-5 text-primary mx-auto mb-2" />
-          <p className="text-xs font-mono text-muted-foreground">BIOMASS</p>
-          <p className="text-2xl font-mono font-bold text-foreground">{instance.current_biomass.toFixed(1)}</p>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4 text-center">
-          <Zap className="w-5 h-5 text-primary mx-auto mb-2" />
-          <p className="text-xs font-mono text-muted-foreground">SPECTRUM MATCH</p>
-          <p className="text-2xl font-mono font-bold text-foreground">
-            {Math.round(simulateDay(sp.base_growth_rate, localRGB, sp.ideal_spectrum_rgb, localEC, sp.ideal_ec).spectrumMatch * 100)}%
-          </p>
-        </div>
-        <div className="bg-card border border-border rounded-lg p-4 text-center">
-          <Droplets className="w-5 h-5 text-primary mx-auto mb-2" />
-          <p className="text-xs font-mono text-muted-foreground">NUTRIENT EFF</p>
-          <p className="text-2xl font-mono font-bold text-foreground">
-            {Math.round(simulateDay(sp.base_growth_rate, localRGB, sp.ideal_spectrum_rgb, localEC, sp.ideal_ec).nutrientEff * 100)}%
-          </p>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="text-center">
+          <CardContent className="pt-5">
+            <Sun className="w-5 h-5 text-primary mx-auto mb-1" />
+            <p className="text-[10px] font-mono text-muted-foreground">BRIGHTNESS</p>
+            <p className="text-xl font-mono font-bold text-foreground">{brightness}%</p>
+          </CardContent>
+        </Card>
+        <Card className="text-center">
+          <CardContent className="pt-5">
+            <Zap className="w-5 h-5 text-primary mx-auto mb-1" />
+            <p className="text-[10px] font-mono text-muted-foreground">SPECTRUM</p>
+            <p className="text-xl font-mono font-bold text-foreground">{Math.round(spectrumMatch * 100)}%</p>
+          </CardContent>
+        </Card>
+        <Card className="text-center">
+          <CardContent className="pt-5">
+            <Droplets className="w-5 h-5 text-primary mx-auto mb-1" />
+            <p className="text-[10px] font-mono text-muted-foreground">NUTRIENT</p>
+            <p className="text-xl font-mono font-bold text-foreground">{Math.round(nutrientEff * 100)}%</p>
+          </CardContent>
+        </Card>
+        <Card className="text-center">
+          <CardContent className="pt-5">
+            <p className="text-[10px] font-mono text-muted-foreground">R/FR RATIO</p>
+            <p className="text-xl font-mono font-bold text-foreground">{rfr.toFixed(1)}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* The Mixer */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Spectrum Sliders */}
-        <div className="bg-card border border-border rounded-lg p-4">
-          <h3 className="text-sm font-mono font-semibold text-foreground mb-4 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            SPECTRUM_MIXER
-          </h3>
-
-          <div
-            className="rounded-lg p-4 mb-4 border border-border"
-            style={{ backgroundColor: spectrumBg }}
-          >
-            <div className="space-y-4">
-              <Slider
-                label="R"
-                value={localRGB[0]}
-                color="#ef4444"
-                onChange={(v) => setLocalRGB([v, localRGB[1], localRGB[2]])}
-              />
-              <Slider
-                label="G"
-                value={localRGB[1]}
-                color="#22c55e"
-                onChange={(v) => setLocalRGB([localRGB[0], v, localRGB[2]])}
-              />
-              <Slider
-                label="B"
-                value={localRGB[2]}
-                color="#3b82f6"
-                onChange={(v) => setLocalRGB([localRGB[0], localRGB[1], v])}
-              />
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary" />
+              <CardTitle className="font-mono text-sm">SPECTRUM MIXER</CardTitle>
             </div>
-          </div>
-
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-muted-foreground">IDEAL: R:{sp.ideal_spectrum_rgb[0]} G:{sp.ideal_spectrum_rgb[1]} B:{sp.ideal_spectrum_rgb[2]}</span>
-          </div>
-        </div>
-
-        {/* Nutrient Input */}
-        <div className="bg-card border border-border rounded-lg p-4">
-          <h3 className="text-sm font-mono font-semibold text-foreground mb-4 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            NUTRIENT_INPUT
-          </h3>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-mono text-muted-foreground mb-1.5">EC VALUE (mS/cm)</label>
-              <input
-                type="range"
-                min="0.5"
-                max="4.0"
-                step="0.1"
-                value={localEC}
-                onChange={(e) => setLocalEC(parseFloat(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-xs font-mono text-muted-foreground">0.5</span>
-                <span className="text-xl font-mono font-bold text-foreground">{localEC.toFixed(1)}</span>
-                <span className="text-xs font-mono text-muted-foreground">4.0</span>
+          </CardHeader>
+          <CardContent>
+            <div
+              className="rounded-lg p-4 mb-4 border border-border"
+              style={{ backgroundColor: spectrumBg }}
+            >
+              <div className="space-y-4">
+                {CHANNEL_LABELS.map((ch, i) => (
+                  <div key={ch.key} className="flex items-center gap-3">
+                    <span className={`text-xs font-mono font-bold w-6 ${ch.color}`}>{ch.key}</span>
+                    <Slider
+                      min={0}
+                      max={255}
+                      value={[localSpectrum[i]]}
+                      onValueChange={(v) => updateChannel(i, Array.isArray(v) ? v[0] : v)}
+                      className="flex-1"
+                    />
+                    <span className="text-xs font-mono w-8 text-right text-foreground">{localSpectrum[i]}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="bg-muted/50 rounded-md p-3">
-              <p className="text-xs font-mono text-muted-foreground mb-1">IDEAL EC</p>
-              <p className="text-lg font-mono font-bold text-primary">{sp.ideal_ec} mS/cm</p>
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-muted-foreground">
+                IDEAL: R:{sp.ideal_spectrum[0]} G:{sp.ideal_spectrum[1]} B:{sp.ideal_spectrum[2]} FR:{sp.ideal_spectrum[3]}
+              </span>
             </div>
+            <div className="flex items-center justify-between text-xs font-mono mt-1">
+              <span className="text-muted-foreground">IDEAL R/FR: {idealRFR.toFixed(1)}</span>
+              <span className="text-muted-foreground">BRIGHTNESS: {brightness}%</span>
+            </div>
+          </CardContent>
+        </Card>
 
-            <div className="bg-muted/50 rounded-md p-3">
-              <p className="text-xs font-mono text-muted-foreground mb-1">DEVIATION</p>
-              <p className={`text-lg font-mono font-bold ${Math.abs(localEC - sp.ideal_ec) < 0.3 ? 'text-primary' : 'text-yellow-400'}`}>
-                {(localEC - sp.ideal_ec).toFixed(1)} mS/cm
-              </p>
+        {/* Nutrient Input */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary" />
+              <CardTitle className="font-mono text-sm">NUTRIENT INPUT</CardTitle>
             </div>
-          </div>
-        </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-muted-foreground mb-1.5">EC VALUE (mS/cm)</label>
+                <Slider
+                  min={0.5}
+                  max={4.0}
+                  step={0.1}
+                  value={[localEC]}
+                  onValueChange={(v) => setLocalEC(Array.isArray(v) ? v[0] : v)}
+                />
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs font-mono text-muted-foreground">0.5</span>
+                  <span className="text-xl font-mono font-bold text-foreground">{localEC.toFixed(1)}</span>
+                  <span className="text-xs font-mono text-muted-foreground">4.0</span>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-muted/50 rounded-md p-3">
+                  <p className="text-xs font-mono text-muted-foreground mb-1">IDEAL EC</p>
+                  <p className="text-lg font-mono font-bold text-primary">{sp.ideal_ec} mS/cm</p>
+                </div>
+                <div className="bg-muted/50 rounded-md p-3">
+                  <p className="text-xs font-mono text-muted-foreground mb-1">DEVIATION</p>
+                  <p className={`text-lg font-mono font-bold ${Math.abs(localEC - sp.ideal_ec) < 0.3 ? 'text-primary' : 'text-yellow-400'}`}>
+                    {(localEC - sp.ideal_ec).toFixed(1)} mS/cm
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Apply Button */}
       <div className="flex gap-3">
-        <button
+        <Button
           onClick={handleApplySettings}
-          className="flex-1 px-4 py-3 text-sm font-mono bg-primary/10 text-primary border border-primary/20 rounded-md hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
+          variant="outline"
+          className="flex-1 font-mono"
         >
-          <ArrowRight className="w-4 h-4" />
-          APPLY_SETTINGS
-        </button>
+          APPLY SETTINGS
+        </Button>
         {instance.status === 'active' && (
-          <button
+          <Button
             onClick={handleAdvanceDay}
-            className="flex-1 px-4 py-3 text-sm font-mono bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+            className="flex-1 font-mono"
           >
-            <Play className="w-4 h-4" />
-            NEXT_DAY
-          </button>
+            NEXT DAY
+          </Button>
         )}
       </div>
 
       {/* The Trace - Growth Chart */}
-      <div className="bg-card border border-border rounded-lg p-4">
-        <h3 className="text-sm font-mono font-semibold text-foreground mb-4 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-primary" />
-          GROWTH_TRACE
-        </h3>
-
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary" />
+            <CardTitle className="font-mono text-sm">GROWTH TRACE</CardTitle>
+          </div>
+          <CardDescription>Standard vs actual growth curve</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer
+            config={{
+              ideal: {
+                label: "STANDARD",
+                color: "#3b82f6",
+              },
+              actual: {
+                label: "ACTUAL",
+                color: "#39FF14",
+              },
+            }}
+            className="h-64"
+          >
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+              <CartesianGrid strokeDasharray="3 3" />
               <XAxis
                 dataKey="day"
-                stroke="#71717a"
                 tick={{ fontSize: 11, fontFamily: 'monospace' }}
-                label={{ value: 'DAY', position: 'insideBottom', offset: -5, fill: '#71717a', fontSize: 11, fontFamily: 'monospace' }}
+                label={{ value: 'DAY', position: 'insideBottom', offset: -5, fill: 'var(--color-muted-foreground)', fontSize: 11, fontFamily: 'monospace' }}
               />
               <YAxis
-                stroke="#71717a"
                 tick={{ fontSize: 11, fontFamily: 'monospace' }}
-                label={{ value: 'BIOMASS', angle: -90, position: 'insideLeft', fill: '#71717a', fontSize: 11, fontFamily: 'monospace' }}
+                label={{ value: 'BIOMASS', angle: -90, position: 'insideLeft', fill: 'var(--color-muted-foreground)', fontSize: 11, fontFamily: 'monospace' }}
               />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1a1a1a',
-                  border: '1px solid #2a2a2a',
-                  borderRadius: '6px',
-                  fontFamily: 'monospace',
-                  fontSize: '12px',
-                }}
-              />
-              <Legend
-                wrapperStyle={{ fontFamily: 'monospace', fontSize: '12px' }}
-              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
               <Line
                 type="monotone"
                 dataKey="ideal"
-                stroke="#3b82f6"
+                stroke="var(--color-ideal)"
                 strokeWidth={2}
                 dot={false}
                 name="STANDARD"
@@ -258,33 +300,15 @@ export function GrowthController({ instance }: GrowthControllerProps) {
               <Line
                 type="monotone"
                 dataKey="actual"
-                stroke="#39FF14"
+                stroke="var(--color-actual)"
                 strokeWidth={2}
                 dot={{ r: 3 }}
                 name="ACTUAL"
               />
             </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Slider({ label, value, color, onChange }: { label: string; value: number; color: string; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-xs font-mono font-bold w-4" style={{ color }}>{label}</span>
-      <input
-        type="range"
-        min="0"
-        max="255"
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className="flex-1 accent-primary"
-        style={{ accentColor: color }}
-      />
-      <span className="text-xs font-mono w-8 text-right text-foreground">{value}</span>
+          </ChartContainer>
+        </CardContent>
+      </Card>
     </div>
   );
 }

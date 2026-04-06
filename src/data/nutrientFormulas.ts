@@ -83,9 +83,10 @@ export const nutrientFormulas: NutrientFormula[] = [
     macronutrients: leafyMacro,
     micronutrients: leafyMicro,
     description: 'Universal formula for leafy greens. High potassium promotes strong cell walls and thick leaf development. Moderate nitrogen supports steady growth without excessive leaf expansion.',
+    is_system: true,
     compatible_species: seedSpecies
       .filter(s => ['lettuce-butterhead', 'kale-lacinato', 'spinach-bloomsdale'].includes(s.id))
-      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.0, 2.4]) }))
+      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.0, 2.4]), from_user: false }))
       .sort((a, b) => b.compatibility - a.compatibility),
   },
   {
@@ -100,9 +101,10 @@ export const nutrientFormulas: NutrientFormula[] = [
     macronutrients: herbMacro,
     micronutrients: herbMicro,
     description: 'Balanced N-K ratio ideal for herbs and aromatic plants. Promotes essential oil production and rich flavor development without excessive vegetative growth.',
+    is_system: true,
     compatible_species: seedSpecies
       .filter(s => ['basil-genovese', 'spinach-bloomsdale', 'lettuce-butterhead'].includes(s.id))
-      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.2, 2.2]) }))
+      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.2, 2.2]), from_user: false }))
       .sort((a, b) => b.compatibility - a.compatibility),
   },
   {
@@ -117,9 +119,10 @@ export const nutrientFormulas: NutrientFormula[] = [
     macronutrients: fruitingMacro,
     micronutrients: fruitingMicro,
     description: 'Higher EC formula for fruiting crops. Balanced N-P-K supports flowering and fruit development. Extra calcium prevents blossom end rot in tomatoes and firmness in strawberries.',
+    is_system: true,
     compatible_species: seedSpecies
       .filter(s => ['tomato-cherry', 'strawberry-albion'].includes(s.id))
-      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.4, 3.0]) }))
+      .map(s => ({ species_id: s.id, compatibility: calculateCompatibility(s, [1.4, 3.0]), from_user: false }))
       .sort((a, b) => b.compatibility - a.compatibility),
   },
 ];
